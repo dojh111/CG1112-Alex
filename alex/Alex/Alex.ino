@@ -32,7 +32,7 @@ volatile TDirection dir = STOP;
 // Number of ticks per revolution from the 
 // wheel encoder.
 
-#define COUNTS_PER_REV      190
+#define COUNTS_PER_REV      170
 
 // Wheel circumference in cm.
 // We will use this to calculate forward/backward distance traveled 
@@ -51,8 +51,8 @@ volatile TDirection dir = STOP;
 //#define PI                  3.141592654
 
 // Alex's length and breadth in cm
-#define ALEX_LENGTH         17.6
-#define ALEX_WIDTH          12.7
+#define ALEX_LENGTH         16.5
+#define ALEX_WIDTH          11.0
 
 // Alex's diagonal. We compute and store this once
 // since it is expensive to compute and really doesn't change.
@@ -313,6 +313,7 @@ void leftISR()
     leftReverseTicksTurns++;
   else if (dir == RIGHT)
     leftForwardTicksTurns++;
+  stabilisation();
 }
 
 void rightISR()
@@ -325,6 +326,7 @@ void rightISR()
     rightReverseTicksTurns++;
   else if (dir == LEFT)
     rightForwardTicksTurns++;
+  stabilisation();
 }
 
 // Set up the external interrupt pins INT0 and INT1
@@ -463,7 +465,7 @@ int pwmVal(float speed)
   if(speed > 100.0)
     speed = 100.0;
 
-  return (int) ((speed / 125.0) * 255.0); //Originally 100
+  return (int) ((speed / 100.0) * 255.0); 
 }
 
 int pwmVal_timer1(float speed)
@@ -474,7 +476,7 @@ int pwmVal_timer1(float speed)
   if(speed > 100.0)
     speed = 100.0;
 
-  return (int) ((speed / 100.0) * 65535.0);
+  return (int) ((speed / 100.0) * 65535.0); //Original 100
 }
 
 // Convert percentages to PWM values
@@ -486,30 +488,73 @@ int pwmVal_right(float speed)
   if(speed > 100.0)
     speed = 100.0; 
 
-  return (int) ((speed / 100.0) * 255.0); //Original 125
+  return (int) ((speed / 100.0) * 255.0);
 }
 
-int stabilisation(int motor_number)
+//Stabilisation function
+void stabilisation()
 {
   int lefttickDifference = 0, righttickDifference = 0;
   
   switch(dir) {
     case FORWARD: lefttickDifference = leftForwardTicks - rightForwardTicks;
                   righttickDifference = rightForwardTicks - leftForwardTicks;
+                  // Left moving faster
+                  if(lefttickDifference >= THRESHOLD) {              
+                    if(OCR0A <= 10)
+                      OCR0A = 10;
+                    else
+                      OCR0A -= 10;
+                    if(OCR2A >= 250)
+                      OCR0A = 200;
+                    else
+                      OCR2A += 10;
+                    return;                                       
+                  } 
+                  // Right moving faster
+                  else if (righttickDifference >= THRESHOLD) {     
+                    if(OCR2A <= 10)
+                      OCR2A = 10;
+                    else
+                      OCR2A -= 10;
+                    if(OCR0A >= 250)
+                      OCR2A = 200;
+                    else
+                      OCR0A += 10;
+                    return;    
+                  }
                   break;
     case REVERSE: lefttickDifference = leftReverseTicks - rightReverseTicks;
+                  righttickDifference = rightReverseTicks - leftReverseTicks;
+                  //Left Moving Faster
+                  if(lefttickDifference >= THRESHOLD) {
+                    if(OCR0B <= 10)
+                      OCR0B = 10;
+                    else
+                      OCR0B -= 10;
+                    if(OCR1B >= 64224)
+                      OCR0B = 225;
+                    else
+                      OCR1B += 2570;
+                    return;
+                  }
+                  //Right Moving Faster
+                  else if(righttickDifference >= THRESHOLD) {
+                    if(OCR1B <= 2620)
+                      OCR1B = 2620;
+                    else
+                      OCR1B -= 2570;
+                    if(OCR0B >= 250)
+                      OCR1B = 58000;
+                    else
+                      OCR0B += 10;
+                    return;
+                  }
                   break;
+    case LEFT: return;
+    case RIGHT: return;
   }
-
-  if(lefttickDifference > THRESHOLD) {              // Left moving faster
-    if (motor_number)
-      return -20;                                   // Returns to left wheel
-    else return 20;                                 // Returns to right wheel
-  } else if (righttickDifference > THRESHOLD) {     // Right moving faster
-    if (motor_number)
-      return 20;                                    // Returns to left wheel
-    else return -20;                                // Returns to right wheel
-  } else return 0;
+  return;
 }
 
 
@@ -522,6 +567,8 @@ void forward(float dist, float speed)
 {
 
   dir = FORWARD;
+
+  clearCounters();
   
   int val = pwmVal(speed);
   int val_right = pwmVal_right(speed);
@@ -539,9 +586,6 @@ void forward(float dist, float speed)
   TCCR2A = 0b10000001;
   TCCR1A = 0b00000001;
   
-  OCR0A = (val + stabilisation(1)) % 255;
-  OCR2A = (val_right + stabilisation(0)) % 255;
-
   OCR0A = val;
   OCR2A = val_right;
   
@@ -558,8 +602,10 @@ void reverse(float dist, float speed)
 {
   dir = REVERSE; 
 
+  clearCounters();
+
   int val = pwmVal(speed);
-  int val_right = pwmVal_right(speed);  
+  int val_right = pwmVal_timer1(speed);  
 
   if (dist == 0)
     deltaDist = 999999;
@@ -598,6 +644,7 @@ unsigned long computeDeltaTicks (float ang)
 void left(float ang, float speed)
 {
   dir = LEFT;
+  
   int val = pwmVal(speed);
   int val_right = pwmVal_right(speed);
   
@@ -606,7 +653,7 @@ void left(float ang, float speed)
   else
     deltaTicks = computeDeltaTicks(ang);
 
-  targetTicks = leftReverseTicksTurns + deltaTicks;
+  targetTicks = (leftReverseTicksTurns + deltaTicks) / 2;
 
   //Turn left
   TCCR0A = 0b00100001;
@@ -630,15 +677,18 @@ void left(float ang, float speed)
 void right(float ang, float speed)
 {
   dir = RIGHT;
+
+  clearCounters();
+  
   int val = pwmVal(speed);
-  int val_right = pwmVal_right(speed);  
+  int val_right = pwmVal_timer1(speed);  
 
   if (ang == 0)
     deltaTicks = 99999999;
   else
     deltaTicks = computeDeltaTicks(ang);
 
-  targetTicks = rightReverseTicksTurns + deltaTicks;
+  targetTicks = (leftForwardTicksTurns + deltaTicks) / 2;
   
   // We will also replace this code with bare-metal later.
   // To turn right we reverse the right wheel and move
@@ -803,7 +853,6 @@ void setup() {
   setupSerial();
   startSerial();
   setupMotors();
-  // startMotors();
   enablePullups();
   initializeState();
   setupPowerSaving();
@@ -833,17 +882,6 @@ void handlePacket(TPacket *packet)
 }
 
 void loop() {
-
-// Uncomment the code below for Step 2 of Activity 3 in Week 8 Studio 2
-
-// forward(0, 100);
-
-// Uncomment the code below for Week 9 Studio 2
-
-
- // put your main code here, to run repeatedly:
-  
-  
   TPacket recvPacket; // This holds commands from the Pi
   
   if (dir == STOP) putArduinoToIdle();
