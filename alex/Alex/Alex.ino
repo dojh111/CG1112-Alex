@@ -56,6 +56,7 @@ volatile TDirection dir = STOP;
 
 // Alex's diagonal. We compute and store this once
 // since it is expensive to compute and really doesn't change.
+// Calculated once below in the setup
 float alexDiagonal = 0.0;
 
 // Alex's turning circumference, calculated once
@@ -299,6 +300,7 @@ void enablePullups()
 }
 
 // Functions to be called by INT0 and INT1 ISRs.
+// Stabilisation is called in here
 void leftISR()
 {
   if (dir == FORWARD){
@@ -333,16 +335,9 @@ void rightISR()
 // for falling edge triggered. Use bare-metal.
 void setupEINT()
 {
-  // Use bare-metal to configure pins 2 and 3 to be
-  // falling edge triggered. Remember to enable
-  // the INT0 and INT1 interrupts.
   EICRA |= 0b00001010;
   EIMSK |= 0b00000011;
 }
-
-// Implement the external interrupt ISRs below.
-// INT0 ISR should call leftISR while INT1 ISR
-// should call rightISR.
 
 ISR(INT0_vect){
   leftISR();
@@ -356,13 +351,9 @@ ISR(INT1_vect){
  * Setup and start codes for serial communications
  * 
  */
-// Set up the serial connection. For now we are using 
-// Arduino Wiring, you will replace this later
-// with bare-metal code.
+// Set up the serial connection.
 void setupSerial()
 {
-  // To replace later with bare-metal.
-  
   // Setup USART to 8N1 at 9600bps
   UCSR0C = 0b00000110;
   UCSR0A = 0;
@@ -370,25 +361,16 @@ void setupSerial()
   // Set higher bytes and lower bytes
   UBRR0L = 103;
   UBRR0H = 0;
-  
-  //Serial.begin(9600);
 }
 
-// Start the serial connection. For now we are using
-// Arduino wiring and this function is empty. We will
-// replace this later with bare-metal code.
-
+// Start the serial connection.
 void startSerial()
 {
-  // Empty for now. To be replaced with bare-metal code
-  // later on.
   UCSR0B = 0b10011000;
 }
 
 // Read the serial port. Returns the read character in
 // ch if available. Also returns TRUE if ch is valid. 
-// This will be replaced later with bare-metal code.
-
 int readSerial(char *buffer)
 {
   // receiving data
@@ -400,9 +382,7 @@ int readSerial(char *buffer)
   return count;
 }
 
-// Write to the serial port. Replaced later with
-// bare-metal code
-
+// Write to the serial port.
 void writeSerial(const char *buffer, int len)
 {
   // sending data
@@ -414,9 +394,14 @@ void writeSerial(const char *buffer, int len)
  * 
  */
 
-// Set up Alex's motors. Right now this is empty, but
-// later you will replace it with code to set up the PWMs
-// to drive the motors.
+// Set up Alex's motors.
+  
+/* Our motor set up is:  
+ *    A1IN - Pin 5, PD5, OC0B, LR
+ *    A2IN - Pin 6, PD6, OC0A, LF
+ *    B1IN - Pin 10, PB2, OC1B, RR
+ *    B2In - pIN 11, PB3, OC2A, RF
+*/
 void setupMotors()
 {
   DDRD |= 0b01100000;
@@ -427,13 +412,6 @@ void setupMotors()
   TCNT2 = 0;
   
   sei(); 
-  
-  /* Our motor set up is:  
-   *    A1IN - Pin 5, PD5, OC0B, LR
-   *    A2IN - Pin 6, PD6, OC0A, LF
-   *    B1IN - Pin 10, PB2, OC1B, RR
-   *    B2In - pIN 11, PB3, OC2A, RF
-   */
 }
 
 ISR(TIMER0_COMPA_VECT) {
@@ -449,8 +427,6 @@ ISR(TIMER2_COMPA_VECT) {
 }
 
 // Start the PWM for Alex's motors.
-// We will implement this later. For now it is
-// blank.
 void startMotors()
 {
   // count to this value
@@ -690,9 +666,6 @@ void right(float ang, float speed)
 
   targetTicks = (leftForwardTicksTurns + deltaTicks) / 2;
   
-  // We will also replace this code with bare-metal later.
-  // To turn right we reverse the right wheel and move
-  // the left wheel forward.
   //Move Right
   TCCR0A = 0b10000001;
   TCCR2A = 0b00000001;
@@ -707,7 +680,7 @@ void right(float ang, float speed)
   TCCR1B = 0b00000011;
 }
 
-// Stop Alex. To replace with bare-metal code later.
+// Stop Alex.
 void stop()
 {
   dir = STOP;
